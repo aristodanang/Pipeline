@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Login Aman</title>
+</head>
+
+<body>
+    <h2>Portal Login</h2>
+
+    {% if message %}
+        <p>{{ message }}</p>
+    {% endif %}
+
+    <form method="POST" action="/">
+        <label for="username">Nama Pengguna</label>
+        <input
+            type="text"
+            id="username"
+            name="username"
+            required
+        >
+
+        <br><br>
+
+        <label for="password">Kata Sandi</label>
+        <input
+            type="password"
+            id="password"
+            name="password"
+            required
+        >
+
+        <br><br>
+
+        <button type="submit">Masuk</button>
+    </form>
+</body>
+</html>
