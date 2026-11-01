@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tetris-web
+  labels:
+    app: tetris-web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tetris-web
+  template:
+    metadata:
+      labels:
+        app: tetris-web
+    spec:
+      containers:
+        - name: tetris-app
+          image: docker.io/library/secure-flask-app:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5000
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
