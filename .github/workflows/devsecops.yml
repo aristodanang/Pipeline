@@ -32,8 +32,8 @@ jobs:
   # ==========================================
   # CI JOB 2: Code Quality (Pylint) & SCA (Pip-Audit)
   # ==========================================
-  code-quality-and-sca:
-    name: Pylint Code Quality & Pip-Audit SCA
+  pylint-check:
+    name: Pylint Code Quality Gate
     runs-on: ubuntu-latest
 
     steps:
@@ -84,7 +84,7 @@ jobs:
   deploy-to-vm:
     name: Build & Deploy to VM (Docker & Kubernetes)
 
-    needs: [sast-scan, code-quality-and-sca, trivy-scan]
+    needs: [sast-scan, pylint-check, trivy-scan]
 
     runs-on: self-hosted
 
