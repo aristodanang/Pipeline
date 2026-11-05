@@ -79,10 +79,10 @@ jobs:
 
 
   # ==========================================
-  # CD STAGE: Deploy ke VM (Docker & Kubernetes)
+  # CD STAGE: Deploy ke VM (Docker Standalone)
   # ==========================================
   deploy-to-vm:
-    name: Build & Deploy to VM (Docker & Kubernetes)
+    name: Build & Deploy to VM (Docker Standalone)
 
     needs: [sast-scan, pylint-check, trivy-scan]
 
@@ -100,15 +100,5 @@ jobs:
         run: |
           docker stop web-flask || true
           docker rm web-flask || true
-          docker run -d -p 5000:5000 --name web-flask secure-flask-app:latest
+          docker run -d --restart unless-stopped -p 5000:5000 --name web-flask secure-flask-app:latest
           docker ps | grep web-flask
-
-      - name: Deploy to Kubernetes Cluster (k3s)
-        run: |
-          docker save secure-flask-app:latest -o /tmp/app.tar
-          sudo k3s ctr images import /tmp/app.tar
-          rm -f /tmp/app.tar
-          kubectl apply -f k8s/
-          kubectl rollout restart deployment/tetris-web
-          kubectl rollout status deployment/tetris-web --timeout=60s
-          kubectl get pods,svc -l app=tetris-web
