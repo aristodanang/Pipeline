@@ -1,0 +1,171 @@
+================================================================================
+          PANDUAN LENGKAP & SINTAKS SIMULASI PIPELINE DEVSECOPS
+               (SKENARIO PENGUJIAN: GAGAL & BERHASIL)
+================================================================================
+Target Host VM     : ris@192.168.139.137 (Ubuntu 26.04.1 LTS via VMware)
+Akses Web App      : http://192.168.139.137:5000 (Docker Standalone)
+Kredensial Login   : admin / supersecret
+Repositori GitHub  : https://github.com/aristodanang/Pipeline
+Author / Committer : aristodanang <aristo.julianggoro@gmail.com>
+================================================================================
+
+ATURAN PENTING:
+Saat melakukan commit atau push ke repositori GitHub, WAJIB menggunakan identitas:
+  Nama  : aristodanang
+  Email : aristo.julianggoro@gmail.com
+
+
+================================================================================
+ARSITEKTUR PIPELINE DEVSECOPS TERKINI (4 CI GATES + 1 CD DEPLOYMENT)
+================================================================================
+File Konfigurasi: Pipeline/.github/workflows/devsecops.yml
+
+[Event Trigger: Push / Pull Request]
+        │
+        ├───> CI Job 1: Semgrep SAST Scan           (Deteksi OWASP Top 10 / SQLi)
+        ├───> CI Job 2: Pylint Code Quality Gate    (PEP 8 Score >= 9.0 + Unit Tests)
+        ├───> CI Job 3: Pip-Audit SCA Scan          (Audit CVE Python Dependencies)
+        └───> CI Job 4: Aqua Trivy Security Scan    (Deteksi Kebocoran Secret / Token)
+        │
+    [Evaluasi Semua Gate Lolos]
+        │
+        ▼
+   CD Stage: Build & Deploy to VM (Docker Standalone pada VM ris@192.168.139.137)
+   Container: web-flask (Port 5000:5000)
+
+
+================================================================================
+BAGIAN KODE YANG DIUJI:
+================================================================================
+File: Pipeline/app.py (pada fungsi login(), baris 77-78)
+
+A. KODE RENTAN (MEMICU PIPELINE GAGAL):
+--------------------------------------------------------------------------------
+        # RENTAN TERHADAP SQL INJECTION (CWE-89 / OWASP A03:2021):
+        query = f"SELECT username FROM users WHERE username = '{username}' AND password = '{password}'"
+        cursor.execute(query)
+
+B. KODE AMAN (MEMICU PIPELINE SUKSES):
+--------------------------------------------------------------------------------
+        # AMAN DARI SQL INJECTION (PARAMETERIZED QUERY):
+        query = "SELECT username FROM users WHERE username = ? AND password = ?"
+        cursor.execute(query, (username, password))
+
+
+================================================================================
+SKENARIO 1: UJI COBA SIMULASI PIPELINE GAGAL (FAILURE DEMO)
+================================================================================
+Tujuan: Membuktikan bahwa scanner keamanan SAST (Semgrep) mampu mendeteksi kode
+        berbahaya dan secara otomatis menggagalkan pipeline, sehingga kode rentan
+        TIDAK AKAN PERNAH ter-deploy ke server VM.
+
+--------------------------------------------------------------------------------
+LANGKAH-LANGKAH POWERSHELL:
+--------------------------------------------------------------------------------
+
+1. Buka PowerShell dan arahkan ke folder repositori Pipeline:
+   cd "C:\Users\ASUS X560\Documents\Semgrep\Pipeline"
+
+2. Pastikan konfigurasi identitas git adalah aristodanang:
+   git config user.name "aristodanang"
+   git config user.email "aristo.julianggoro@gmail.com"
+
+3. Buat dan berpindah ke branch simulasi gagal:
+   git checkout main
+   git pull origin main
+   git checkout -b test/simulasi-pipeline-gagal
+
+4. Modifikasi file Pipeline/app.py pada baris 77-78:
+   Ubah baris:
+       query = "SELECT username FROM users WHERE username = ? AND password = ?"
+       cursor.execute(query, (username, password))
+   Menjadi:
+       query = f"SELECT username FROM users WHERE username = '{username}' AND password = '{password}'"
+       cursor.execute(query)
+
+5. Simpan file app.py, kemudian lakukan commit dan push ke GitHub:
+   git add app.py
+   git commit --author="aristodanang <aristo.julianggoro@gmail.com>" -m "test: introduce sql injection in login query"
+   git push -u origin test/simulasi-pipeline-gagal
+
+6. Buat Pull Request (PR) di GitHub:
+   - Buka link PR yang muncul pada output terminal di browser Anda, atau kunjungi:
+     https://github.com/aristodanang/Pipeline/pull/new/test/simulasi-pipeline-gagal
+   - Klik tombol hijau "Create pull request".
+
+--------------------------------------------------------------------------------
+HASIL YANG AKAN TERJADI PADA GITHUB ACTIONS:
+--------------------------------------------------------------------------------
+* CI Job "Semgrep SAST Scan" langsung GAGAL (Tanda Silang Merah / Exit Code 1).
+  Semgrep menampilkan temuan pelanggaran keamanan:
+  "SQL query built using string formatting or interpolation (CWE-89 / OWASP A03:2021)".
+* Tahap CD "Build & Deploy to VM (Docker Standalone)" otomatis DIBATALKAN (Skipped).
+* Server VM (192.168.139.137) tetap aman dan tidak tersentuh oleh perubahan rentan.
+
+📸 BUKTI SCREENSHOT SIMULASI GAGAL:
+- Ambil tangkapan layar halaman GitHub Actions yang memperlihatkan job Semgrep bertanda silang merah dan tahap deployment berstatus abu-abu (Skipped).
+
+
+================================================================================
+SKENARIO 2: UJI COBA SIMULASI PIPELINE BERHASIL (SUCCESS & DEPLOYMENT DEMO)
+================================================================================
+Tujuan: Membuktikan bahwa setelah kode rentan diperbaiki dengan parameterized query,
+        seluruh 4 gerbang CI lolos, dan otomatis memicu tahap CD deployment ke VM.
+
+--------------------------------------------------------------------------------
+LANGKAH-LANGKAH POWERSHELL:
+--------------------------------------------------------------------------------
+
+1. Masuk ke folder Pipeline (tetap berada di branch test/simulasi-pipeline-gagal):
+   cd "C:\Users\ASUS X560\Documents\Semgrep\Pipeline"
+
+2. Kembalikan file Pipeline/app.py ke kode aman (parameterized query):
+   Ubah baris 77-78 menjadi:
+       query = "SELECT username FROM users WHERE username = ? AND password = ?"
+       cursor.execute(query, (username, password))
+
+3. Simpan file app.py, lalu commit perbaikan dan push ke GitHub:
+   git add app.py
+   git commit --author="aristodanang <aristo.julianggoro@gmail.com>" -m "fix: sanitize login query using parameterized query"
+   git push origin test/simulasi-pipeline-gagal
+
+4. Buka kembali halaman Pull Request pada GitHub:
+   - GitHub Actions akan otomatis memicu build baru untuk commit perbaikan.
+   - Amati seluruh tahapan:
+     ✅ 1. Semgrep SAST Scan                    : HIJAU (0 Blocking Findings)
+     ✅ 2. Pylint Code Quality Gate             : HIJAU (Skor 10.00/10 & 23 Tests Passed)
+     ✅ 3. Pip-Audit SCA Scan                   : HIJAU (0 Known Vulnerabilities)
+     ✅ 4. Aqua Trivy Security & Secret Scan    : HIJAU (0 Leaks / Secrets)
+     ✅ 5. Build & Deploy to VM (Docker)        : HIJAU (Succeeded)
+
+5. Lakukan Penggabungan Pull Request:
+   - Klik tombol hijau "Merge pull request", kemudian klik "Confirm merge".
+   - Tahap deployment ke branch main akan memastikan VM diperbarui secara permanen.
+
+--------------------------------------------------------------------------------
+PEMBUKTIAN RUNTIME PADA SERVER VM (192.168.139.137):
+--------------------------------------------------------------------------------
+
+1. Akses Aplikasi melalui Browser:
+   - URL: http://192.168.139.137:5000
+   - Respon awal: Mengalihkan (302 Redirect) ke halaman login http://192.168.139.137:5000/login
+   - Masukkan Kredensial:
+     Username : admin
+     Password : supersecret
+   - Setelah login, halaman game Tetris Web Edition terbuka dan siap dimainkan.
+
+2. Verifikasi Status Melalui PowerShell (Opsional):
+   curl.exe -I http://192.168.139.137:5000
+
+   Hasil yang diharapkan:
+   HTTP/1.1 302 FOUND
+   Location: /login
+   Server: Werkzeug/3.1.9 Python/3.10.22
+
+📸 BUKTI SCREENSHOT SIMULASI BERHASIL:
+- Screenshot halaman GitHub Actions dengan SEMUA 5 JOB (4 CI + 1 CD) berwarna HIJAU.
+- Screenshot halaman Web Tetris di browser pada alamat http://192.168.139.137:5000 setelah login.
+
+================================================================================
+                    SELESAI - PANDUAN SIMULASI PIPELINE
+================================================================================
