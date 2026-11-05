@@ -1,0 +1,114 @@
+================================================================================
+            DIAGRAM ALUR PIPELINE DEVSECOPS (SEDERHANA & RINGKAS)
+                   UNTUK BAHAN PRESENTASI & LAPORAN PRAKTIKUM
+================================================================================
+Target VM     : ris@192.168.139.137 (Ubuntu VM)
+Port Aplikasi : http://192.168.139.137:5000 (Docker Standalone)
+Author        : aristodanang <aristo.julianggoro@gmail.com>
+================================================================================
+
+
+--------------------------------------------------------------------------------
+1. DIAGRAM ALUR UTAMA (SEDERHANA & LINEAR)
+--------------------------------------------------------------------------------
+
+  +-------------------------------------------------------+
+  |              1. DEVELOPER (aristodanang)              |
+  |     Tulis kode lokal -> Git Commit -> Push ke GitHub  |
+  +---------------------------┬---------------------------+
+                              │
+                              ▼
+  +-------------------------------------------------------+
+  |               2. GITHUB PULL REQUEST                  |
+  |   Event Pull Request memicu pipeline secara otomatis  |
+  +---------------------------┬---------------------------+
+                              │
+                              ▼
+  +-------------------------------------------------------+
+  |       3. CONTINUOUS INTEGRATION (4 SECURITY GATES)    |
+  |                                                       |
+  |   [Gate 1] Semgrep SAST    : Deteksi SQL Injection    |
+  |   [Gate 2] Pylint & Test   : Cek Kualitas & 23 Tests  |
+  |   [Gate 3] Pip-Audit SCA   : Cek Celah CVE Library    |
+  |   [Gate 4] Aqua Trivy      : Cek Kebocoran Password   |
+  +---------------------------┬---------------------------+
+                              │
+                 [EVALUASI KELULUSAN GATE]
+                              │
+             ┌────────────────┴────────────────┐
+             │                                 │
+        [ADA CELAH]                       [SEMUA LOLOS]
+             │                                 │
+             ▼                                 ▼
+    [❌ PIPELINE GAGAL]               [✅ PIPELINE SUKSES]
+  - Deployment DIBATALKAN           - Kode aman siap di-deploy
+  - Server VM Tetap Aman            - Lanjut ke Server VM
+                                               │
+                                               ▼
+  +-------------------------------------------------------+
+  |    4. CONTINUOUS DEPLOYMENT (SELF-HOSTED RUNNER VM)   |
+  |                                                       |
+  |   - Agen Runner di VM (192.168.139.137) ambil tugas   |
+  |   - Build Docker Image (User non-root: appuser)       |
+  |   - Restart Kontainer: web-flask                      |
+  +---------------------------┬---------------------------+
+                              │
+                              ▼
+  +-------------------------------------------------------+
+  |              5. PRODUCTION RUNTIME (SELESAI)          |
+  |                                                       |
+  |   - URL Akses : http://192.168.139.137:5000           |
+  |   - Login     : admin / supersecret                   |
+  |   - Aplikasi  : Tetris Web Edition Aktif & Terlindungi|
+  +-------------------------------------------------------+
+
+
+--------------------------------------------------------------------------------
+2. CARA MENJELASKAN ALUR INI SAAT PRESENTASI (HANYA 1 MENIT)
+--------------------------------------------------------------------------------
+
+"Bapak/Ibu Penguji, alur DevSecOps yang kami bangun memiliki 5 tahapan utama:
+
+1. Tahap Pertama (Developer):
+   Saya sebagai developer (aristodanang) menulis kode aplikasi lalu melakukan 
+   push ke GitHub dan membuat Pull Request.
+
+2. Tahap Kedua (Pemicu / Trigger):
+   GitHub secara otomatis mendeteksi Pull Request dan menjalankan pengujian keamanan.
+
+3. Tahap Ketiga (4 Satpam Keamanan / CI Gates):
+   Sebelum kode boleh masuk server, kode harus melewati 4 satpam digital:
+   - Semgrep   : Menjaga agar tidak ada celah SQL Injection.
+   - Pylint    : Menjaga standar mutu kode dan memastikan semua unit test lolos.
+   - Pip-Audit : Memastikan dependensi Python tidak membawa virus/celah CVE.
+   - Trivy     : Memastikan tidak ada password atau token yang bocor di kode.
+
+4. Tahap Keempat (Gerbang Keputusan):
+   - Jika ada satu saja satpam yang menemukan celah, pipeline LANGSUNG GAGAL 
+     dan proses deployment dibatalkan seketika. Server VM tetap aman.
+   - Jika semua lolos dan hijau, pipeline memberikan izin lanjut ke tahap deployment.
+
+5. Tahap Kelima (Deployment ke VM):
+   Agen Self-Hosted Runner di dalam VM mengambil kode yang sudah lolos uji, 
+   membangun image Docker secara otomatis, dan menyalakan kontainer pada port 5000. 
+   Aplikasi Tetris langsung aktif dan aman digunakan di http://192.168.139.137:5000."
+
+
+--------------------------------------------------------------------------------
+3. TABEL RINGKAS 4 GATES CI (MUDAH DIHAFAL)
+--------------------------------------------------------------------------------
+
++---------+------------------+-----------------------------+-------------------+
+| No      | Nama Alat        | Apa yang Diperiksa?         | Hasil Standar     |
++---------+------------------+-----------------------------+-------------------+
+| Gate 1  | Semgrep SAST     | Celah kode (SQL Injection)  | 0 Celah Kritis    |
+| Gate 2  | Pylint + Tests   | Kerapian & Logika Route     | Skor >= 9.0 (10.0)|
+| Gate 3  | Pip-Audit SCA    | Celah CVE pada pustaka lib  | 0 Vulnerability   |
+| Gate 4  | Aqua Trivy       | Bocoran token / API keys    | 0 Leak / Secret   |
++---------+------------------+-----------------------------+-------------------+
+| Target  | Docker VM Host   | Port 5000 (Non-root user)   | Status: Running   |
++---------+------------------+-----------------------------+-------------------+
+
+================================================================================
+                       AKHIR DARI CATATAN DIAGRAM.TXT
+================================================================================
