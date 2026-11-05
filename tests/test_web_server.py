@@ -3,6 +3,7 @@ tests/test_web_server.py - Unit test untuk memverifikasi endpoint server web Fla
 routing halaman utama, API highscore, dan penyajian static files.
 """
 
+import os
 import unittest
 import json
 from app import app, HIGHSCORE_FILE
@@ -12,12 +13,29 @@ class TestWebServer(unittest.TestCase):
     def setUp(self):
         self.client = app.test_client()
         app.config["TESTING"] = True
+        self.orig_content = None
+        if os.path.exists(HIGHSCORE_FILE):
+            with open(HIGHSCORE_FILE, "r", encoding="utf-8") as f:
+                self.orig_content = f.read()
+
+    def tearDown(self):
+        if self.orig_content is not None:
+            with open(HIGHSCORE_FILE, "w", encoding="utf-8") as f:
+                f.write(self.orig_content)
 
     def test_index_route(self):
-        """Memverifikasi route '/' mengembalikan halaman HTML dengan status 200."""
+        """Memverifikasi route '/' redirect ke login jika unauth dan return 200 saat auth."""
+        # Unauthenticated: harus redirect 302 ke /login
+        unauth_response = self.client.get("/")
+        self.assertEqual(unauth_response.status_code, 302)
+        self.assertIn("/login", unauth_response.headers.get("Location", ""))
+
+        # Authenticated: harus mengembalikan status 200 dan halaman game
+        with self.client.session_transaction() as sess:
+            sess["user"] = "admin"
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"PYTHON TETRIS", response.data)
+        self.assertIn(b"TETRIS", response.data)
         self.assertIn(b"tetris-canvas", response.data)
 
     def test_api_highscore_get(self):
