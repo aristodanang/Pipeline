@@ -1,0 +1,113 @@
+================================================================================
+  PANDUAN LENGKAP: SKENARIO PENGUJIAN PIPELINE DEVSECOPS (GAGAL & SUKSES)
+  UNTUK TUGAS PRAKTIKUM ATS PIDRS
+  Author/Committer Wajib: aristodanang <aristo.julianggoro@gmail.com>
+================================================================================
+
+BAGIAN KODE YANG DIUBAH (SQL INJECTION):
+File: Pipeline/app.py (pada fungsi login(), sekitar baris 68-75)
+
+--------------------------------------------------------------------------------
+A. KODE RENTAN (MEMICU SKENARIO PIPELINE GAGAL):
+--------------------------------------------------------------------------------
+Ubah query pada app.py menjadi string formatting / f-string:
+
+        # RENTAN TERHADAP SQL INJECTION:
+        query = f"SELECT username FROM users WHERE username = '{username}' AND password = '{password}'"
+        cursor.execute(query)
+
+  * Mengapa Pipeline Gagal?
+    Pemindai Semgrep SAST secara otomatis mendeteksi query SQL dinamis yang tidak
+    disanitasi (Kategori OWASP A03:2021 - Injection / CWE-89: SQL Injection).
+    Hasilnya: Job "Semgrep SAST Scan" langsung MERAH (Failed / Exit Code 1).
+    Tahap CD "Build & Deploy to VM" otomatis DIBATALKAN (Skipped). Server VM aman!
+
+--------------------------------------------------------------------------------
+B. KODE AMAN (MEMICU SKENARIO PIPELINE SUKSES):
+--------------------------------------------------------------------------------
+Kembalikan query pada app.py menjadi parameterized query:
+
+        # AMAN DARI SQL INJECTION (PARAMETERIZED QUERY):
+        query = "SELECT username FROM users WHERE username = ? AND password = ?"
+        cursor.execute(query, (username, password))
+
+  * Mengapa Pipeline Sukses?
+    Nilai input dipisahkan secara struktural dari logika SQL, sehingga karakter
+    injeksi berbahaya tidak akan dieksekusi sebagai perintah basis data.
+    Hasilnya: 
+    - Semgrep SAST Scan: HIJAU (0 Blocking Findings)
+    - Pylint Code Quality: HIJAU (Skor 10.00 / 10)
+    - Pip-Audit SCA: HIJAU (0 Known Vulnerabilities)
+    - Aqua Trivy: HIJAU (0 Leaks / Secrets)
+    - Tahap CD otomatis men-deploy ke Docker Host di VM!
+
+================================================================================
+SINTAKS POWERSHELL UNTUK EKSEKUSI PENGUJIAN:
+================================================================================
+
+--------------------------------------------------------------------------------
+SKENARIO 1: UJI COBA PIPELINE GAGAL (FAILURE DEMO)
+--------------------------------------------------------------------------------
+1. Buka terminal PowerShell dan masuk ke folder Pipeline:
+   cd "C:\Users\ASUS X560\Documents\Semgrep\Pipeline"
+
+2. Pastikan identitas git:
+   git config user.name "aristodanang"
+   git config user.email "aristo.julianggoro@gmail.com"
+
+3. Buat branch baru untuk pengujian gagal:
+   git checkout -b test/demo-pipeline-gagal
+
+4. Buka file app.py, ubah query login menjadi rentan:
+   query = f"SELECT username FROM users WHERE username = '{username}' AND password = '{password}'"
+   cursor.execute(query)
+
+5. Simpan file app.py, lalu commit dan push ke GitHub:
+   git add app.py
+   git commit --author="aristodanang <aristo.julianggoro@gmail.com>" -m "test: introduce sql injection vulnerability in login query"
+   git push -u origin test/demo-pipeline-gagal
+
+6. Buka link Pull Request yang muncul di terminal pada browser Anda.
+   Klik tombol hijau "Create pull request".
+   * HASIL YANG TERBUKTI:
+     - GitHub Actions berjalan secara otomatis.
+     - Tahap "Semgrep SAST Scan" langsung GAGAL (tanda silang merah).
+     - Tahap deployment ke VM otomatis DIBATALKAN.
+     - Ambil tangkapan layar (screenshot) sebagai bukti "Uji Coba Pipeline GAGAL".
+
+--------------------------------------------------------------------------------
+SKENARIO 2: UJI COBA PIPELINE SUKSES (SUCCESS & DEPLOYMENT DEMO)
+--------------------------------------------------------------------------------
+1. Masuk ke folder Pipeline (tetap pada branch yang sama):
+   cd "C:\Users\ASUS X560\Documents\Semgrep\Pipeline"
+
+2. Kembalikan query pada file app.py menjadi kode aman:
+   query = "SELECT username FROM users WHERE username = ? AND password = ?"
+   cursor.execute(query, (username, password))
+
+3. Simpan file app.py, lalu commit dan push perbaikan:
+   git add app.py
+   git commit --author="aristodanang <aristo.julianggoro@gmail.com>" -m "fix: resolve sql injection by using parameterized query"
+   git push origin HEAD
+
+4. Buka kembali halaman Pull Request di browser:
+   * HASIL YANG TERBUKTI:
+     - Pipeline otomatis memindai ulang commit perbaikan terbaru.
+     - Semgrep SAST Scan: HIJAU (Passed)
+     - Pylint Code Quality: HIJAU (Passed)
+     - Pip-Audit SCA: HIJAU (Passed)
+     - Aqua Trivy: HIJAU (Passed)
+     - Build & Deploy to VM: HIJAU (Passed)
+     - Klik tombol hijau "Merge pull request" untuk menggabungkan ke branch main!
+
+5. Pembuktian Aplikasi Aktif pada Server VM (192.168.139.137):
+   - Akses Docker Host: http://192.168.139.137:5000
+   - Kredensial Login: admin / supersecret
+   - Ambil tangkapan layar (screenshot) sebagai bukti "Uji Coba Pipeline SUKSES sampai tahap deployment".
+
+================================================================================
+INFORMASI TAMBAHAN LUARAN ATS PRAKTIKUM:
+- Luaran 1 (Diagram Alur Pipeline): diagram_alur_pipeline.jpg
+- Luaran 2 (Repositori DevSecOps): https://github.com/aristodanang/Pipeline
+- Luaran 3 (Uji Coba Gagal & Sukses): Panduan langkah di atas
+================================================================================
