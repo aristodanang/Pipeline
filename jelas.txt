@@ -1,0 +1,295 @@
+================================================================================
+          DOKUMENTASI LENGKAP ARSITEKTUR & PENJELASAN ALUR DEVSECOPS
+                 APLIKASI PYTHON TETRIS WEB + DOCKER HOST VM
+================================================================================
+Target Host VM     : ris@192.168.139.137 (Ubuntu 26.04.1 LTS via VMware)
+Akses Web App      : http://192.168.139.137:5000 (Docker Standalone)
+Kredensial Login   : admin / supersecret
+Repositori GitHub  : https://github.com/aristodanang/Pipeline
+Author / Developer : aristodanang <aristo.julianggoro@gmail.com>
+Status Pengujian   : Terverifikasi Aktif, Lolos 4 Gate CI & Lolos CD Docker VM
+================================================================================
+
+
+--------------------------------------------------------------------------------
+1. DIAGRAM ALUR ARSITEKTUR PIPELINE (TEXT / ASCII REPRESENTATION)
+--------------------------------------------------------------------------------
+
++------------------------------------------------------------------------------+
+|                           1. SOURCE CODE MANAGEMENT                          |
+|  [Developer: aristodanang]                                                   |
+|         │                                                                    |
+|         ├───> Git Commit & Push (Branch: feature / bugfix / test)            |
+|         └───> Create Pull Request (Target: main)                             |
+|                    │                                                         |
+|                    ▼                                                         |
+|  [GitHub Repository: aristodanang/Pipeline]                                  |
+|         └───> Webhook Event Trigger (Push / PR / workflow_dispatch)          |
++────────────────────┬─────────────────────────────────────────────────────────+
+                     │
+                     ▼
++------------------------------------------------------------------------------+
+|             2. CI SECURITY & QUALITY GATES (GitHub Cloud Runner)             |
+|                                                                              |
+|  ┌──────────────────┐  ┌──────────────────┐  ┌───────────────┐  ┌──────────┐ |
+|  │  SAST SCANNING   │  │  CODE QUALITY &  │  │  SCA AUDIT   │  │  SECRET  │ |
+|  │ (Semgrep Engine) │  │   UNIT TESTING   │  │  (Pip-Audit)  │  │ SCANNING │ |
+|  │                  │  │ (Pylint+Unittest)│  │               │  │ (Trivy)  │ |
+|  │ • Scan OWASP 10  │  │ • PEP 8 Standard │  │ • Scan CVE    │  │ • Secret │ |
+|  │ • Deteksi SQLi   │  │ • Score >= 9.0   │  │   Python Libs │  │ • Token/ │ |
+|  │   (CWE-89)       │  │ • 23 Tests Pass  │  │ • OSV/PyPI DB │  │   Key fs │ |
+|  │ • Exit 1 jika    │  │ • Mencegah bug   │  │ • Exit 1 jika │  │ • fs scan│ |
+|  │   ada celah      │  │   logika route   │  │   ada vuln    │  │          │ |
+|  └────────┬─────────┘  └────────┬─────────┘  └───────┬───────┘  └────┬─────┘ |
+|           │                     │                    │               │       |
++───────────┴─────────────────────┴────────────────────┴───────────────┴───────+
+                                          │
+                          [Evaluasi Kelulusan Semua Gate]
+                                          │
+                        ┌─────────────────┴─────────────────┐
+                        │                                   │
+                   [Ada Celah]                         [Semua Lolos]
+                        │                                   │
+                        ▼                                   ▼
+               Pipeline GAGAL (Merah)               Pipeline SUKSES (Hijau)
+               CD Otomatis DIBATALKAN               Lanjut ke Tahap CD Deployment
+               Server VM Aman & Terlindungi
+                                                            │
+                                                            ▼
++------------------------------------------------------------------------------+
+|              3. CD AUTOMATED DEPLOYMENT (Self-Hosted Runner di VM)           |
+|                                                                              |
+|  [Agent Runner: ris@192.168.139.137]                                         |
+|  (actions.runner.aristodanang-Pipeline.ris.service - Active Outbound Polling)|
+|         │                                                                    |
+|         ├───> Step 1: Checkout Source Code Terbaru                           |
+|         ├───> Step 2: Build Docker Image (Tag: secure-flask-app:latest)      |
+|         │             • Menggunakan base python:3.10-slim                    |
+|         │             • Terisolasi dengan .dockerignore (.git diabaikan)     |
+|         │             • Non-Root User (appuser UID 1000 demi keamanan)       |
+|         │                                                                    |
+|         └───> Step 3: Lifecycle Management Kontainer (Docker Standalone)     |
+|                       • docker stop web-flask || true                        |
+|                       • docker rm web-flask || true                          |
+|                       • docker run -d --restart unless-stopped \             |
+|                                    -p 5000:5000 --name web-flask \           |
+|                                    secure-flask-app:latest                   |
+|                       • docker ps | grep web-flask (Verifikasi aktif)        |
++────────────────────────────────────────┬─────────────────────────────────────+
+                                         │
+                                         ▼
++------------------------------------------------------------------------------+
+|                         4. PRODUCTION RUNTIME ACCESS                         |
+|                                                                              |
+|  Akses Tunggal (Docker Host): http://192.168.139.137:5000                    |
+|                                                                              |
+|  [Fitur & Mekanisme Keamanan Runtime]                                        |
+|  • Portal Autentikasi SQLite Aman (Kredensial Default: admin / supersecret)  |
+|  • Session Guard (Rute / otomatis 302 Redirect ke /login jika unauthenticated)|
+|  • Game Python Tetris Web Edition (HTML5 Canvas + Web Audio API Synthesizer) |
+|  • Isolasi Penuh Proses: appuser (UID 1000) tanpa akses privilege root host |
++------------------------------------------------------------------------------+
+
+
+--------------------------------------------------------------------------------
+2. PENJELASAN DETAIL TAHAPAN ALUR PIPELINE (STEP-BY-STEP)
+--------------------------------------------------------------------------------
+
+A. TAHAP 1: SOURCE CODE MANAGEMENT (SCM) & EVENT TRIGGER
+   - Developer (aristodanang) memodifikasi dan mengembangkan kode aplikasi pada 
+     branch fitur lokal (misalnya feature branch atau bugfix branch).
+   - Seluruh perubahan di-commit dengan identitas resmi developer dan di-push ke 
+     repositori GitHub (aristodanang/Pipeline).
+   - Developer mengajukan Pull Request (PR) ke branch utama (main).
+   - Event trigger (push / pull request) otomatis memicu GitHub Actions melalui 
+     webhook terintegrasi untuk mengeksekusi workflow devsecops.yml.
+
+B. TAHAP 2: CONTINUOUS INTEGRATION (CI) - 4 GERBANG KEAMANAN & MUTU KODE
+   Kode sumber diuji secara ketat pada lingkungan cloud runner (ubuntu-latest) 
+   melalui 4 gerbang mandiri yang saling melengkapi:
+   
+   1. Gerbang 1: SAST Scan (Semgrep):
+      - Memindai source code secara statis tanpa mengeksekusi aplikasi.
+      - Aturan terfokus pada OWASP Top 10, CWE (Common Weakness Enumeration), 
+        dan pola rentan seperti SQL Injection (CWE-89) pada fungsi login app.py.
+      - Jika ditemukan f-string atau konkatenasi string SQL dinamis, Semgrep 
+        seketika melempar exit code 1 dan menggagalkan workflow.
+        
+   2. Gerbang 2: Code Quality (Pylint) & Unit Testing:
+      - Menjalankan 23 automated unit & integration tests (python -m unittest) 
+        untuk memastikan seluruh endpoint Flask, proteksi sesi 302, REST API 
+        skor, dan modul game berfungsi dengan benar tanpa regresi.
+      - Pylint membedah gaya penulisan kode terhadap standar resmi PEP 8, 
+        modularitas, kebersihan variabel, serta menetapkan ambang batas skor >= 9.0 
+        (kode saat ini meraih nilai sempurna 10.00/10).
+        
+   3. Gerbang 3: Software Composition Analysis (Pip-Audit):
+      - Berjalan sebagai job mandiri ("Pip-Audit SCA Scan").
+      - Memindai file requirements.txt secara komprehensif terhadap basis data 
+        kerentanan terbuka global (Open Source Vulnerability / OSV dan PyPI Advisory).
+      - Menjamin seluruh library pihak ketiga bebas dari celah CVE publik.
+        
+   4. Gerbang 4: Filesystem & Secret Scanning (Aqua Trivy):
+      - Memeriksa struktur filesystem repositori untuk mendeteksi apakah developer 
+        secara tidak sengaja meninggalkan token akses (GitHub PAT), API keys, 
+        private key SSH, atau password sensitif di dalam source code.
+
+C. TAHAP 3: EVALUASI KELULUSAN (QUALITY & SECURITY GATEWAY)
+   - Konfigurasi workflow menerapkan dependensi ketat:
+     `needs: [sast-scan, pylint-check, pip-audit-scan, trivy-scan]`
+   - Tahap deployment ke server VM HANYA akan dipicu jika KEEMPAT gerbang di atas 
+     berstatus SUKSES (HIJAU).
+   - Apabila terdapat satu saja temuan kritis (misalnya Semgrep menemukan SQL 
+     Injection atau unit test gagal), maka tahap deployment DIBATALKAN (Skipped). 
+     Server produksi di VM dijamin tetap bersih dan aman dari infeksi bug/celah.
+
+D. TAHAP 4: CONTINUOUS DEPLOYMENT (CD) PADA SELF-HOSTED RUNNER VM
+   - Job deployment dijalankan pada VM Ubuntu lokal (`runs-on: self-hosted`).
+   - Tugas deployment diambil secara proaktif oleh agen runner GitHub yang 
+     terpasang di VM (actions.runner.aristodanang-Pipeline.ris.service).
+   - Runner bertugas mengambil kode sumber versi terbaru yang telah terverifikasi aman.
+
+E. TAHAP 5: CONTAINERIZATION & DOCKER STANDALONE LIFECYCLE
+   - Runner mengeksekusi build container image baru berlabel `secure-flask-app:latest`.
+   - File `.dockerignore` secara cerdas mengisolasi berkas, memastikan direktori `.git` 
+     dan file uji tidak ikut masuk ke dalam image.
+   - Kontainer lama `web-flask` dihentikan (`docker stop`) dan dihapus (`docker rm`).
+   - Kontainer baru dijalankan dengan port binding `5000:5000`, restart policy 
+     `--restart unless-stopped`, dan berjalan di bawah akun pengguna non-root `appuser`.
+
+F. TAHAP 6: PRODUCTION LIVE RUNTIME & USER ACCESS
+   - Pengguna mengakses aplikasi langsung melalui browser pada:
+     http://192.168.139.137:5000
+   - Portal login SQLite memvalidasi kredensial pengguna.
+   - Sesi terproteksi mengizinkan akses ke game Python Tetris Web Edition lengkap 
+     dengan procedural synthesizer audio dan REST API penyimpanan skor.
+
+
+--------------------------------------------------------------------------------
+3. FUNGSI DARI SETIAP KOMPONEN & TOOLS
+--------------------------------------------------------------------------------
+
+1. GitHub Actions:
+   Fungsi: Platform orkestrasi otomasi CI/CD terpusat yang menghubungkan repositori 
+   kode dengan proses pengujian keamanan dan deployment otomatis ke server target.
+
+2. Semgrep (Static Application Security Testing - SAST):
+   Fungsi: Menganalisis sintaks kode mentah aplikasi secara semantik guna mendeteksi 
+   kerentanan OWASP Top 10 (seperti SQL Injection, Command Injection, XSS) sebelum 
+   aplikasi dikompilasi atau dijalankan.
+
+3. Pylint (Linter & Standar Mutu Kode):
+   Fungsi: Memeriksa kerapian dan kepatuhan sintaks Python terhadap standar PEP 8, 
+   mendeteksi unused imports, dead code, dan potensi bug logika.
+
+4. Python Unittest (Automated Unit Testing):
+   Fungsi: Memvalidasi kebenaran logika endpoint HTTP Flask, proteksi redirect 
+   sesi 302, validasi payload REST API skor, dan transisi modul aplikasi secara otomatis.
+
+5. Pip-Audit (Software Composition Analysis - SCA):
+   Fungsi: Mengaudit dependensi eksternal pada requirements.txt terhadap database 
+   CVE (OSV & PyPI) untuk mendeteksi library pihak ketiga yang sudah usang atau rentan.
+
+6. Aqua Trivy (Secret & Filesystem Scanner):
+   Fungsi: Memindai repositori untuk mencegah kebocoran data rahasia seperti 
+   password, GitHub personal access token (PAT), sertifikat privat, dan API keys.
+
+7. Docker Engine & Dockerfile Non-Root:
+   Fungsi: Mengisolasi aplikasi beserta pustaka pendukungnya ke dalam satu unit 
+   kontainer yang portabel. User `appuser` (UID 1000) memastikan aplikasi tidak 
+   memiliki hak akses root pada kernel sistem operasi host VM.
+
+8. File .dockerignore:
+   Fungsi: Memfilter dan mencegah berkas sensitif (seperti riwayat .git, skrip testing, 
+   dan file temporary) agar tidak ikut tersalin ke dalam container image.
+
+9. GitHub Self-Hosted Runner (VM Agent):
+   Fungsi: Agen latar belakang yang berjalan di dalam VM target untuk menerima dan 
+   mengeksekusi perintah deployment secara lokal melalui mekanisme outbound polling.
+
+10. SQLite & Flask Web Application:
+    Fungsi: Menyediakan backend aplikasi game Tetris yang ringan dengan basis data 
+    relasional lokal untuk otentikasi pengguna secara cepat tanpa dependensi database server terpisah.
+
+
+--------------------------------------------------------------------------------
+4. ALASAN MENGAPA KOMPONEN & ARSITEKTUR INI DIPAKAI (THE "WHY")
+--------------------------------------------------------------------------------
+
+1. Mengapa Menerapkan Prinsip "Shift-Left Security"?
+   Alasan: Pada model deployment tradisional, keamanan baru diperiksa saat aplikasi 
+   sudah berada di server produksi, di mana penanganan insiden sangat mahal dan 
+   berisiko tinggi. Dengan "Shift-Left", pengujian keamanan digeser ke tahap paling 
+   awal (Pull Request), sehingga kode berbahaya langsung ditolak sebelum menyentuh server.
+
+2. Mengapa Memakai Semgrep untuk Mencegah SQL Injection (CWE-89)?
+   Alasan: SQL Injection adalah salah satu kerentanan tertua namun paling merusak 
+   (OWASP A03:2021). Semgrep memiliki semantic context engine yang cerdas, mampu 
+   membedakan query string biasa dengan query yang dibentuk secara dinamis menggunakan 
+   f-string atau konkatenasi variabel tanpa sanitasi.
+
+3. Mengapa Pip-Audit Dipisahkan Menjadi Job Mandiri?
+   Alasan: Transparansi audit keamanan. Dengan menjadikannya job mandiri ("Pip-Audit 
+   SCA Scan"), hasil pemindaian dependensi terlihat jelas sebagai salah satu gerbang 
+   resmi di visualisasi GitHub Actions, memudahkan tim DevOps memantau status CVE 
+   secara independen dari penilaian linter Pylint.
+
+4. Mengapa Kubernetes (k3s) Dihapus dan Beralih ke Docker Standalone?
+   Alasan: 
+   - Efisiensi Sumber Daya VM: VM memiliki batas penyimpanan 9.8 GB dan RAM 3.3 GB. 
+     Menjalankan k3s menyebabkan konsumsi disk tinggi (mencapai 93%) dan overhead 
+     RAM karena adanya containerd k3s dan Kubernetes API server (port 6443).
+   - Mengeliminasi Kompleksitas Berlebih: Aplikasi Python Tetris Web adalah aplikasi 
+     monolitik berskala tunggal (single-node). Docker Standalone jauh lebih sederhana, 
+     menghapus kebutuhan cluster networking (NodePort/kube-proxy), serta langsung 
+     menurunkan penggunaan disk ke 84% (menghemat ratusan MB ruang dan 300+ MB RAM).
+   - Stabilitas Deployment: Docker Standalone memiliki jalur eksekusi yang ringkas 
+     (build -> run) tanpa risiko kegagalan k3s image import atau pod pending.
+
+5. Mengapa Menggunakan Non-Root User (`appuser` UID 1000) pada Container?
+   Alasan: Secara default, Docker menjalankan proses di dalam kontainer sebagai user root. 
+   Jika aplikasi memiliki celah keamanan RCE (Remote Code Execution), penyerang 
+   berpotensi melakukan container breakout ke host VM dengan privilege penuh. Menjalankan 
+   sebagai `appuser` membatasi hak akses penyerang hanya di dalam ruang lingkup user biasa.
+
+6. Mengapa Menggunakan GitHub Self-Hosted Runner di Lingkungan Private VM?
+   Alasan: VM ris (192.168.139.137) berada pada private network / NAT (192.168.139.0/24) 
+   tanpa IP publik. Runner self-hosted bekerja dengan metode *outbound polling* ke 
+   server GitHub melalui port 443 HTTPS. Artinya, kita TIDAK PERLU membuka port inbound 
+   apapun (seperti SSH port 22) ke publik atau mengatur port forwarding, sehingga attack 
+   surface VM tetap tertutup rapat dari internet luar.
+
+7. Mengapa Memakai File `.dockerignore`?
+   Alasan: Tanpa `.dockerignore`, perintah `COPY . .` akan menyalin folder `.git` 
+   ke dalam image Docker. Hal ini sangat berbahaya karena seluruh riwayat commit, 
+   informasi email pengembang, dan branch metadata tersimpan di dalam image publik/container. 
+   File `.dockerignore` mencegah kebocoran informasi dan mempercepat waktu build image.
+
+8. Mengapa Memakai Parameterized Query pada SQLite?
+   Alasan: Parameterized query memisahkan instruksi SQL dari data masukan pengguna. 
+   Basis data memperlakukan seluruh karakter input semata-mata sebagai nilai string literal, 
+   sehingga trik injeksi seperti `' OR '1'='1` tidak akan pernah dieksekusi sebagai sintaks SQL.
+
+
+--------------------------------------------------------------------------------
+5. STATUS & HASIL VERIFIKASI TERKINI SISTEM
+--------------------------------------------------------------------------------
+
+A. Status Agen & Service di VM ris@192.168.139.137:
+   - Systemd Service GitHub Runner : actions.runner.aristodanang-Pipeline.ris.service (ACTIVE / RUNNING)
+   - Docker Engine Daemon          : docker.service (ACTIVE / RUNNING)
+   - Kubernetes k3s Service        : k3s.service (INACTIVE / DISABLED - Berhasil Dihapus)
+
+B. Status Beban Sumber Daya VM:
+   - RAM Total: 3.3 GiB | Terpakai: ~932 MiB | Tersedia: 2.4 GiB (Sangat Ringan & Sehat)
+   - Penyimpanan Root: 9.8 GB | Terpakai: 7.8 GB (84%) | Tersedia: 1.5 GB (Aman)
+
+C. Status Runtime Aplikasi:
+   - Docker Container : Kontainer `web-flask` aktif (Status: Up), Port: 0.0.0.0:5000->5000/tcp
+   - HTTP Healthcheck : Endpoint http://192.168.139.137:5000 merespon HTTP 302 (Redirect ke /login)
+   - Autentikasi      : Akun `admin` / `supersecret` terverifikasi aktif.
+   - Kubernetes Pod   : Seluruh Pods k8s telah dibersihkan; port 30500 berstatus tertutup.
+
+================================================================================
+                    AKHIR DARI CATATAN DOKUMENTASI JELAS.TXT
+================================================================================
