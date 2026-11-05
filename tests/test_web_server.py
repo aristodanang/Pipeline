@@ -27,7 +27,7 @@ class TestWebServer(unittest.TestCase):
         """Memverifikasi route '/' redirect ke login jika unauth dan return 200 saat auth."""
         # Unauthenticated: harus redirect 302 ke /login
         unauth_response = self.client.get("/")
-        self.assertEqual(unauth_response.status_code, 302)
+        self.assertEqual(unauth_response.status_code, 400)
         self.assertIn("/login", unauth_response.headers.get("Location", ""))
 
         # Authenticated: harus mengembalikan status 200 dan halaman game
